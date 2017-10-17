@@ -1,0 +1,16 @@
+{
+    "name": "bk/wp-cli-db",
+    "type": "project",
+    "license": "UNLICENSED",
+    "authors": [
+        {
+            "name": "Brian Kelleher",
+            "email": "bkelleher4@gmail.com"
+        }
+    ],
+    "minimum-stability": "dev",
+    "require": {
+        "symfony/yaml": "^4.0@dev",
+        "ifsnop/mysqldump-php": "2.*"
+    }
+}

@@ -1,0 +1,4 @@
+www/
+vendor/
+*.sql
+sr.yml
