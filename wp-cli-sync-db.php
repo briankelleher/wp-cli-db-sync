@@ -3,21 +3,41 @@
 require 'vendor/autoload.php';
 
 use Symfony\Component\Yaml\Yaml;
-use Ifsnop\Mysqldump as IMysqldump;
 
+// Unfortunately necessary for enourmous DBs, change at your leisure.
 ini_set('memory_limit','2048M');
 
 class WP_CLI_Sync_DB {
+
+    public $dbfile = 'in.sql';
+    public $dumpfile = 'dump.sql';
 
     public function __invoke( $args, $assoc_args ) {
         
         $value = $this->ingest_yml_file( $assoc_args );
 
-        $dumpfile = './dump.sql';
-        $this->write_sql_dump( $dumpfile );
+        $dbfile_set = isset( $assoc_args["dbfile"] ) && file_exists( $assoc_args["dbfile"] );
+        $export_set = isset( $assoc_args["export"] ) && $assoc_args["export"];
 
-        $this->search_replace( $value, $dumpfile );
+        // Allows you to set the name of the file that should be ingested
+        if ( $dbfile_set ) {
+            $this->dbfile = $assoc_args["dbfile"];
+        }
+
+        // Allows you to specify an --export parameter that will write a file from the db being acted on
+        if ( $export_set ) {
+            if ( !$dbfile_set ) {
+                $this->write_sql_dump( $this->dbfile );
+            } else {
+                WP_CLI::error("Cannot supply the --export parameter and the --dbfile parameter.  --export implies you are exporting a file from the current database, where --dbfile implies you are ingesting a database file.");
+            }
+        }
+
+        $this->search_replace( $value, $this->dumpfile );
+
+        $this->import_database( $this->dumpfile );
     }
+
 
     // Ingests sr.yml file in current directory, or from the --file flag.
     // Prints an error if no valid one supplied.
@@ -41,19 +61,21 @@ class WP_CLI_Sync_DB {
     }
 
 
+    // Writes the dump file
     private function write_sql_dump( $dumpfile ) {
         try {
-            $dump = new IMysqldump\Mysqldump('mysql:host=' . DB_HOST . ';dbname=' . DB_NAME, DB_USER, DB_PASSWORD);
-            $dump->start( $dumpfile );
+            WP_CLI::run_command( array( 'db', 'export', $dumpfile ), array( 'add-drop-table' => true ) );
+            WP_CLI::success("Created a dumpfile at " . $dumpfile );
         } catch ( \Exception $e ) {
             WP_CLI::error('mysqldump-php error: ' . $e->getMessage() );
         }
     }
 
 
+    // Loops through the search/replace options in the .yml file, replaces as necessary
     private function search_replace( $value, $dumpfile ) {
         foreach ( $value["search-replace"] as $v ) {
-            $new_dump_sql = str_replace($v["search"], $v["replace"], file_get_contents($dumpfile));
+            $new_dump_sql = str_replace($v["search"], $v["replace"], file_get_contents($this->dbfile));
             $pattern = '/(s:)([0-9]*)(:\\\\")([^"]*'.str_replace('/', '\/', preg_quote($v["replace"])).'((?!\\\\\\").)*)(\\\\")/';
             $new_dump_sql = preg_replace_callback($pattern, function ($m){
                 return($m[1].mb_strlen($m[4], 'utf-8').$m[3].$m[4].$m[6]);
@@ -61,7 +83,13 @@ class WP_CLI_Sync_DB {
             file_put_contents( $dumpfile, $new_dump_sql );
             WP_CLI::success( "Replaced " . $v["search"] . " with " . $v["replace"] );
         }
-        
+        WP_CLI::success( "Search/Replaced file is located at " . $dumpfile );
+    }
+
+    
+    // Imports the db into the current installation
+    private function import_database( $dumpfile ) {
+        WP_CLI::run_command( array( 'db', 'import', $dumpfile ) );
     }
 
 }
